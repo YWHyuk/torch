@@ -1,7 +1,7 @@
 from torchvision import models
 import torch
 from torch import nn, optim
-from torch.optim.lr_scheduler import StepLR
+from torch.optim.lr_scheduler import StepLR, ExponentialLR
 from matplotlib import pyplot as plt
 import copy, os
 
@@ -120,10 +120,10 @@ if __name__ == "__main__":
     device = torch.device("cuda:0")
     model_resnet18 = tune_resnet(False, device)
     loss_func = nn.CrossEntropyLoss(reduction="mean")
-    opt = optim.SGD(model_resnet18.parameters(), lr=1e-3)
-    lr_scheduler = StepLR(opt, step_size=7, gamma=0.1)
-    train_dl, val_dl = get_data_loader("./COVID19")
-    num_epochs = 10
+    opt = optim.Adam(model_resnet18.parameters(), lr=1e-3)
+    lr_scheduler = StepLR(opt, step_size=20, gamma=0.1)
+    train_dl, val_dl = get_data_loader("./full_data")
+    num_epochs = 99
 
     params_train = {
             "num_epochs" : num_epochs,
