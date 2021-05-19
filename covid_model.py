@@ -191,6 +191,8 @@ if __name__ == "__main__":
     parser.add_argument('-E', type=int, required=True)
     parser.add_argument('-B', type=int, required=True)
     parser.add_argument('-m', type=int, required=True)
+    parser.add_argument('-g', type=int, required=True)
+    
     parsed = parser.parse_args()
 
     output_folder = str(parsed.O)
@@ -199,14 +201,23 @@ if __name__ == "__main__":
     pretrained = parsed.P == 'T'
     num_epochs = parsed.E
     batch_size = parsed.B
-    max_datat = parsed.m
+    max_data = parsed.m
+    gpu_id = parsed.g
     
     try:
         os.makedirs(output_folder, exist_ok=False)
     except FileExistsError:
         print("Overwriting output folder!")
-        
-    device = torch.device("cuda:0")
+    
+    with open(os.path.join(output_folder,"cmdline.log"), "w") as f:
+        f.write("input data: %s\n" % input_data)
+        f.write("model name: %s\n" % model_name)
+        f.write("Pretrained : %s\n" % str(pretrained))
+        f.write("num epochs: %d\n" % num_epochs)
+        f.write("batch size: %d\n" % batch_size)
+        f.write("max data: %d\n" % max_data)
+
+    device = torch.device("cuda:%d" % gpu_id)
     # Load model and data
     model = load_model(model_name, pretrained, device)
     train_dl, val_dl, test_dl = get_data_loader(input_data, batch_size, output_folder, max_data)
@@ -236,3 +247,5 @@ if __name__ == "__main__":
     print("############### Test Phase ###############")
     cf = test(model, test_dl)
     plot_confusion_matrix(cf, ["non Covid19", "Covid19"], output_folder)
+
+    

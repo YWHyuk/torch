@@ -11,6 +11,8 @@ import matplotlib.pyplot as plt
 import os
 import torch
 
+torch.manual_seed(0)
+
 def show(img, name, norm):
 	# convert tensor to numpy array
     npimg = img.numpy()
@@ -63,7 +65,7 @@ def get_data_loader(path_to_data, batch_size, result, max_data):
     test_size = int(max_len)#test_size - val_size
     etc = len(covid_ds) - train_size - val_size - test_size
 
-    train_ds, val_ds, test_ds, _ = random_split(covid_ds, [train_size, val_size, test_size, etc], generator=torch.Generator().manual_seed(0))
+    train_ds, val_ds, test_ds, _ = random_split(covid_ds, [train_size, val_size, test_size, etc])
     print("Train dataset class :", label_statistics(train_ds))
     print("val dataset class :", label_statistics(val_ds))
     print("test dataset class :", label_statistics(test_ds))
