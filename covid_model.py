@@ -160,7 +160,7 @@ def load_model(model_name, pretrained, fc_only, device):
             for param in model.parameters():
                 param.requires_grad = False
     
-            num_classes = 2
+        num_classes = 2
         num_ftrs= model.fc.in_features
         model.fc = nn.Linear(num_ftrs, num_classes)
     elif model_name == "vgg":

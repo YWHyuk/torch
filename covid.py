@@ -64,7 +64,8 @@ def get_data_loader(path_to_data, batch_size, result, max_data):
     val_size = int(max_len * 0.3)
     test_size = int(max_len)#test_size - val_size
     etc = len(covid_ds) - train_size - val_size - test_size
-
+    
+    torch.manual_seed(0)
     train_ds, val_ds, test_ds, _ = random_split(covid_ds, [train_size, val_size, test_size, etc])
     print("Train dataset class :", label_statistics(train_ds))
     print("val dataset class :", label_statistics(val_ds))
