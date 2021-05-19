@@ -1,0 +1,7 @@
+input data: full_data
+model name: resnet
+Pretrained : True
+Gradient only linear : False
+num epochs: 25
+batch size: 128
+max data: 3000

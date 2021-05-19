@@ -1,0 +1,7 @@
+input data: full_data
+model name: vgg
+Pretrained : True
+Gradient only linear : True
+num epochs: 25
+batch size: 64
+max data: 3000
