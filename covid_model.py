@@ -6,6 +6,7 @@ from matplotlib import pyplot as plt
 import copy, os, argparse, pathlib
 import numpy as np
 import itertools
+import sklearn.metrics as metrics
 
 from covid import get_data_loader
 
@@ -105,44 +106,76 @@ def train_val(model, params):
     model.load_state_dict(best_model_wts)
     return model, loss_history, metric_history
 
-def test(model, data_loader):
+def test(model, data_loader, output_folder):
     metric = 0.0
     len_data = len(data_loader.dataset)
     confusion_matrix = torch.tensor([[0, 0],[0, 0]], dtype=torch.int64)
+    roc_y = []
+    roc_score = []
 
     for xb, yb in data_loader:
-        xb = xb.to(device)
-        yb = yb.to(device)
-        output = model(xb)
+        roc_y += yb.tolist()
+
+        g_xb = xb.to(device)
+        g_yb = yb.to(device)
+        output = model(g_xb)
         pred = output.argmax(dim=1, keepdim=True)
-        tmp = pred.eq(yb.view_as(pred)).sum().item()
+        tmp = pred.eq(g_yb.view_as(pred)).sum().item()
         metric += tmp
         print("batch result: %d/%d %f" % (tmp, len(xb), tmp / len(xb) * 100))
-        
+
         #Updata confusion matrix
         for actual, predicted in zip(yb, pred):
             confusion_matrix[actual][predicted] += 1
 
+        for idx, prob in enumerate(output):
+            roc_score.append(prob[yb[idx]].cpu().detach().data)
+
+    curve = metrics.roc_curve(roc_y, roc_score)
+    roc_auc = metrics.auc(curve[0], curve[1])
+
+    plt.title('Receiver Operating Characteristic')
+    plt.plot(curve[0], curve[1], 'b', label = 'AUC = %0.2f' % roc_auc)
+    plt.legend(loc = 'lower right')
+    plt.plot([0, 1], [0, 1],'r--')
+    plt.xlim([0, 1])
+    plt.ylim([0, 1])
+    plt.ylabel('True Positive Rate')
+    plt.xlabel('False Positive Rate')
+    plt.show()
+    plt.savefig(os.path.join(output_folder, "roc.png"), bbox_inches = "tight")
+    plt.clf()
+
     print("Total accuracy : %f(%d/%d)" % (metric / len_data * 100, metric, len_data))
-    
     print("\t\t Actual 0\t\t Actual 1")
     print("Pred 0\t\t %d\t\t\t %d" % (confusion_matrix[0][0], confusion_matrix[1][0]))
     print("Pred 1\t\t %d\t\t\t %d" % (confusion_matrix[0][1], confusion_matrix[1][1]))
+    
     return confusion_matrix
 
-def load_model(model_name, pretrained, device):
+def load_model(model_name, pretrained, fc_only, device):
     if model_name == "resnet":
         model = models.resnet18(pretrained=pretrained)
+        if fc_only:
+            for param in model.parameters():
+                param.requires_grad = False
+    
+            num_classes = 2
+        num_ftrs= model.fc.in_features
+        model.fc = nn.Linear(num_ftrs, num_classes)
     elif model_name == "vgg":
         model = models.vgg16(pretrained=pretrained)
+        if fc_only:
+            for param in model.parameters():
+                param.requires_grad = False
+
+        num_classes = 2
+        num_ftrs= model.classifier[-1].in_features
+        model.classifier[-1] = nn.Linear(num_ftrs, num_classes)
     else:
         print("Undefined model name")
         exit(1)
-
-    num_classes = 2
-    num_ftrs= model.fc.in_features
-    model.fc = nn.Linear(num_ftrs, num_classes)
-
+  
     model.to(device)
  
     return model
@@ -188,6 +221,7 @@ if __name__ == "__main__":
     parser.add_argument('-I', type=pathlib.Path, help='input image folder path', required=True)
     parser.add_argument('-M', choices=['resnet', 'vgg'], required=True)
     parser.add_argument('-P', choices=['T', 'F'], required=True)
+    parser.add_argument('-p', choices=['T', 'F'], required=True)
     parser.add_argument('-E', type=int, required=True)
     parser.add_argument('-B', type=int, required=True)
     parser.add_argument('-m', type=int, required=True)
@@ -199,6 +233,7 @@ if __name__ == "__main__":
     input_data = str(parsed.I)
     model_name = parsed.M
     pretrained = parsed.P == 'T'
+    fc_only = parsed.p == 'T'
     num_epochs = parsed.E
     batch_size = parsed.B
     max_data = parsed.m
@@ -213,13 +248,14 @@ if __name__ == "__main__":
         f.write("input data: %s\n" % input_data)
         f.write("model name: %s\n" % model_name)
         f.write("Pretrained : %s\n" % str(pretrained))
+        f.write("Gradient only linear : %s\n" % str(fc_only))
         f.write("num epochs: %d\n" % num_epochs)
         f.write("batch size: %d\n" % batch_size)
         f.write("max data: %d\n" % max_data)
 
     device = torch.device("cuda:%d" % gpu_id)
     # Load model and data
-    model = load_model(model_name, pretrained, device)
+    model = load_model(model_name, pretrained, fc_only, device)
     train_dl, val_dl, test_dl = get_data_loader(input_data, batch_size, output_folder, max_data)
     
     # Set loss, optimizer, learning late scheduler
@@ -239,13 +275,13 @@ if __name__ == "__main__":
             "device" : device
             }
 
-    model_resnt18, loss_hist, metric_hist = train_val(model, params_train)
+    model, loss_hist, metric_hist = train_val(model, params_train)
 
     draw_result("Loss", "Train-val-loss.png", loss_hist, num_epochs)
     draw_result("Accuracy", "Train-val-Accuracy.png", metric_hist, num_epochs)
 
     print("############### Test Phase ###############")
-    cf = test(model, test_dl)
+    cf = test(model, test_dl, output_folder)
     plot_confusion_matrix(cf, ["non Covid19", "Covid19"], output_folder)
 
     
