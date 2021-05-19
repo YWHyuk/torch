@@ -3,7 +3,7 @@ import torch
 from torch import nn, optim
 from torch.optim.lr_scheduler import StepLR, ExponentialLR
 from matplotlib import pyplot as plt
-import copy, os
+import copy, os, argparse, pathlib
 
 from covid import get_data_loader
 
@@ -60,7 +60,7 @@ def train_val(model, params):
     lr_scheduler = params["lr_scheduler"]
     path_to_weights = params["path_to_weights"]
     device = params["device"]
-
+    
     loss_history = {
             "train": [],
             "val": [],
@@ -97,34 +97,71 @@ def train_val(model, params):
             print("Copied best model weights!")
  
         lr_scheduler.step()
-        print("train loss: %.6f, dev loss: %.6f, train accuracy: %.2f, dev accuracy: %.2f" %
+        print("train loss: %.6f, val loss: %.6f, train accuracy: %.2f, val accuracy: %.2f" %
                 (train_loss, val_loss, 100*train_metric, 100*val_metric))
 
     model.load_state_dict(best_model_wts)
     return model, loss_history, metric_history
 
-def tune_resnet(pretrained, device):
-    model_resnet18 = models.resnet18(pretrained=pretrained)
+def load_model(model_name, pretrained, device):
+    if model_name == "resnet":
+        model = models.resnet18(pretrained=pretrained)
+    elif model_name == "vgg":
+        model = models.vgg16(pretrained=pretrained)
+    else:
+        print("Undefined model name")
+        exit(1)
 
     num_classes = 2
-    num_ftrs= model_resnet18.fc.in_features
-    model_resnet18.fc = nn.Linear(num_ftrs, num_classes)
+    num_ftrs= model.fc.in_features
+    model.fc = nn.Linear(num_ftrs, num_classes)
 
-    model_resnet18.to(device)
+    model.to(device)
  
-    return model_resnet18
+    return model
+
+def draw_result(title, name, log ,num_epochs):
+    plt.title("Train-Val " + title)
+    plt.plot(range(1,num_epochs+1), log["train"], label="train")
+    plt.plot(range(1,num_epochs+1), log["val"], label="val")
+    plt.ylabel(title)
+    plt.xlabel("Training Epochs")
+    plt.legend()
+    plt.savefig(os.path.join(output_folder, name))
+    plt.clf()
 
 if __name__ == "__main__":
-    os.makedirs("./covid_models", exist_ok=True)
+    parser = argparse.ArgumentParser(description='Prameter for ML')
+    parser.add_argument('-O', type=pathlib.Path, help='Output folder path', required=True)
+    parser.add_argument('-I', type=pathlib.Path, help='input image folder path', required=True)
+    parser.add_argument('-M', choices=['resnet', 'vgg'], required=True)
+    parser.add_argument('-P', choices=['T', 'F'], required=True)
+    parser.add_argument('-E', type=int, required=True)
+    parser.add_argument('-B', type=int, required=True)
+    parsed = parser.parse_args()
 
+    output_folder = str(parsed.O)
+    input_data = str(parsed.I)
+    model_name = parsed.M
+    pretrained = parsed.P == 'T'
+    num_epochs = parsed.E
+    batch_size = parsed.B
+
+    try:
+        os.makedirs(output_folder, exist_ok=False)
+    except FileExistsError:
+        print("Overwriting output folder!")
+        
     device = torch.device("cuda:0")
-    model_resnet18 = tune_resnet(False, device)
+    # Load model and data
+    model = load_model(model_name, pretrained, device)
+    train_dl, val_dl = get_data_loader(input_data, batch_size, output_folder)
+    
+    # Set loss, optimizer, learning late scheduler
     loss_func = nn.CrossEntropyLoss(reduction="mean")
-    opt = optim.Adam(model_resnet18.parameters(), lr=1e-3)
+    opt = optim.Adam(model.parameters(), lr=1e-3)
     lr_scheduler = StepLR(opt, step_size=20, gamma=0.1)
-    train_dl, val_dl = get_data_loader("./full_data")
-    num_epochs = 99
-
+    
     params_train = {
             "num_epochs" : num_epochs,
             "opt" : opt,
@@ -133,26 +170,11 @@ if __name__ == "__main__":
             "val_dl" : val_dl,
             "sanity" : False,
             "lr_scheduler" : lr_scheduler,
-            "path_to_weights" : "./covid_models/resnet18.pt",
+            "path_to_weights" : os.path.join(output_folder, "weight.pt"),
             "device" : device
             }
 
-    model_resnt18, loss_hist, metric_hist = train_val(model_resnet18, params_train)
-    os.makedirs("result", exist_ok=True)
-    plt.title("Train-Val Loss")
-    plt.plot(range(1,num_epochs+1), loss_hist["train"], label="train")
-    plt.plot(range(1,num_epochs+1), loss_hist["val"], label="val")
-    plt.ylabel("Loss")
-    plt.xlabel("Training Epochs")
-    plt.legend()
-    plt.savefig("result/norm_Train-val-loss.png")
-    plt.clf()
+    model_resnt18, loss_hist, metric_hist = train_val(model, params_train)
 
-    plt.title("Train-Val Accuracy")
-    plt.plot(range(1,num_epochs+1), metric_hist["train"], label="train")
-    plt.plot(range(1,num_epochs+1), metric_hist["val"], label="val")
-    plt.ylabel("Accuracy")
-    plt.xlabel("Training Epochs")
-    plt.legend()
-    plt.savefig("result/norm_Train-val-Accuracy.png")
-
+    draw_result("Loss", "Train-val-loss.png", loss_hist, num_epochs)
+    draw_result("Accuracy", "Train-val-Accuracy.png", metric_hist, num_epochs)

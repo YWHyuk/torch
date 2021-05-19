@@ -1,6 +1,6 @@
 import torch
 from covid import mean, std, label_statistics
-from covid_model import tune_resnet, loss_epoch
+from covid_model import load_model, loss_epoch
 from torch import nn, optim
 import torchvision.transforms as transforms
 from torch.utils.data import Subset, DataLoader, Dataset
@@ -33,10 +33,10 @@ if __name__ == "__main__":
     print(label_statistics(ds))
     ds.transform = val_transformer
 
-    test_dl = DataLoader(ds, batch_size=64*4, shuffle=True)
+    test_dl = DataLoader(ds, batch_size=64, shuffle=True)
     
     device = torch.device("cuda:0")
-    model = tune_resnet(False, device)
+    model = load_model(False, device)
     model.load_state_dict(torch.load(path_to_weights))
 
     model.eval()
