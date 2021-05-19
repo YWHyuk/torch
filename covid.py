@@ -9,6 +9,7 @@ import numpy as np
 from torchvision.datasets import ImageFolder
 import matplotlib.pyplot as plt
 import os
+import torch
 
 def show(img, name, norm):
 	# convert tensor to numpy array
@@ -20,7 +21,10 @@ def show(img, name, norm):
     plt.imsave(name, npimg_tr)
     
 def label_statistics(data_set):
-    labels = data_set.targets
+    if isinstance(data_set, Subset):
+        labels = np.array(data_set.dataset.targets)[data_set.indices]
+    else:
+        labels = data_set.targets
     counter_stat = collections.Counter(labels)
     return counter_stat
 
@@ -47,58 +51,52 @@ def get_data_loader(path_to_data, batch_size, result):
     temp_transformer = transforms.Compose([transforms.ToTensor()])
 
     # Data set
-    covid_ds1 = ImageFolder(path_to_data, temp_transformer)#load_dataset(path_to_data, temp_transformer)
-    covid_ds2 = ImageFolder(path_to_data, temp_transformer)#load_dataset(path_to_data, temp_transformer)
-    print(label_statistics(covid_ds1))
+    covid_ds = ImageFolder(path_to_data, temp_transformer)#load_dataset(path_to_data, temp_transformer)
+    print("Total dataset class :", label_statistics(covid_ds))
 
     # index of list
-    indices = list(range(len(covid_ds1)))
-    max_len = 4000
+    indices = list(range(len(covid_ds)))
+    max_len = 3000
+    
     train_size = int(max_len*0.7)
     test_size = max_len - train_size
-    sss = StratifiedShuffleSplit(n_splits=1, train_size=train_size, test_size=test_size, random_state=0)
+    val_size = int(test_size * (2/3))
+    test_size = len(covid_ds) - max_len#test_size - val_size
 
-    for train_index, test_index in sss.split(indices, covid_ds1.targets):
-        train_ds = Subset(covid_ds1, train_index)
-        test_ds = Subset(covid_ds2, test_index)
-    
+    train_ds, val_ds, test_ds = random_split(covid_ds, [train_size, val_size, test_size], generator=torch.Generator().manual_seed(0))
+    print("Train dataset class :", label_statistics(train_ds))
+    print("val dataset class :", label_statistics(val_ds))
+    print("test dataset class :", label_statistics(test_ds))
+
     # Sample images
     sample_size = 4
 
     train_sample = [train_ds[i][0] for i in range(sample_size)]
+    val_sample = [val_ds[i][0] for i in range(sample_size)]
     test_sample = [test_ds[i][0] for i in range(sample_size)]
 
     train_sample = make_grid(train_sample, nrow=8, padding=1)
+    val_sample = make_grid(val_sample, nrow=8, padding=1)
     test_sample = make_grid(test_sample, nrow=8, padding=1)
     
-    show(train_sample, os.path.join(result, "train_sample.png"),False)
-    show(train_sample, os.path.join(result, "norm_train_sample.png"),True)
-    
-    show(test_sample, os.path.join(result, "test_sample.png"), False)
-    show(test_sample, os.path.join(result, "norm_test_sample.png"),True)
+    show(train_sample, os.path.join(result, "train_sample.png"), True)
+    show(val_sample, os.path.join(result, "val_sample.png"), True)
+    show(test_sample, os.path.join(result, "test_sample.png"), True)
     
     # Transformers
     norm = transforms.Normalize([0.5146469, 0.51464266, 0.51463896], std=[0.3062062, 0.30619, 0.3061753])
-    train_transformer = transforms.Compose([
-        transforms.Resize([512,512]),
-        transforms.RandomHorizontalFlip(p=0.5),
-        transforms.RandomVerticalFlip(p=0.5),
-        transforms.ToTensor(),
-        norm
-    ])
-
-    test_transformer = transforms.Compose([
+    global_transformer = transforms.Compose([
         transforms.Resize([512,512]),
         transforms.ToTensor(),
         norm
     ])
 
     # Change transformer
-    covid_ds1.transform = train_transformer
-    covid_ds2.transform = test_transformer
-
+    covid_ds.transform = global_transformer
+    
     train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
+    val_dl = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
     test_dl = DataLoader(test_ds, batch_size=batch_size, shuffle=False)
-
-    return train_dl, test_dl
+    
+    return train_dl, val_dl, test_dl
 

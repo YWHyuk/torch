@@ -103,6 +103,31 @@ def train_val(model, params):
     model.load_state_dict(best_model_wts)
     return model, loss_history, metric_history
 
+def test(model, data_loader):
+    metric = 0.0
+    len_data = len(data_loader.dataset)
+    confusion_matrix = [[0, 0],[0, 0]]
+
+    for xb, yb in data_loader:
+        xb = xb.to(device)
+        yb = yb.to(device)
+        output = model(xb)
+        pred = output.argmax(dim=1, keepdim=True)
+        tmp = pred.eq(yb.view_as(pred)).sum().item()
+        metric += tmp
+        print("batch result: %d/%d %f" % (tmp, len(xb), tmp / len(xb) * 100))
+        
+        #Updata confusion matrix
+        for actual, predicted in zip(yb, pred):
+            confusion_matrix[actual][predicted] += 1
+
+    print("Total accuracy : %f(%d/%d)" % (metric / len_data * 100, metric, len_data))
+    
+    print("\t\t Actual 0\t\t Actual 1")
+    print("Pred 0\t\t %d\t\t\t %d" % (confusion_matrix[0][0], confusion_matrix[1][0]))
+    print("Pred 1\t\t %d\t\t\t %d" % (confusion_matrix[0][1], confusion_matrix[1][1]))
+    return confusion_matrix
+
 def load_model(model_name, pretrained, device):
     if model_name == "resnet":
         model = models.resnet18(pretrained=pretrained)
@@ -155,7 +180,7 @@ if __name__ == "__main__":
     device = torch.device("cuda:0")
     # Load model and data
     model = load_model(model_name, pretrained, device)
-    train_dl, val_dl = get_data_loader(input_data, batch_size, output_folder)
+    train_dl, val_dl, test_dl = get_data_loader(input_data, batch_size, output_folder)
     
     # Set loss, optimizer, learning late scheduler
     loss_func = nn.CrossEntropyLoss(reduction="mean")
@@ -178,3 +203,6 @@ if __name__ == "__main__":
 
     draw_result("Loss", "Train-val-loss.png", loss_hist, num_epochs)
     draw_result("Accuracy", "Train-val-Accuracy.png", metric_hist, num_epochs)
+
+    print("############### Test Phase ###############")
+    test(model, test_dl)
