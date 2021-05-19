@@ -46,7 +46,7 @@ def std(data_set):
 
     return [stdR, stdG, stdB]
 
-def get_data_loader(path_to_data, batch_size, result):
+def get_data_loader(path_to_data, batch_size, result, max_data):
     # Transformers
     temp_transformer = transforms.Compose([transforms.ToTensor()])
 
@@ -56,14 +56,14 @@ def get_data_loader(path_to_data, batch_size, result):
 
     # index of list
     indices = list(range(len(covid_ds)))
-    max_len = 3000
+    max_len = min(max_data, len(covid_ds))
     
     train_size = int(max_len*0.7)
-    test_size = max_len - train_size
-    val_size = int(test_size * (2/3))
-    test_size = len(covid_ds) - max_len#test_size - val_size
+    val_size = int(max_len * 0.3)
+    test_size = int(max_len)#test_size - val_size
+    etc = len(covid_ds) - train_size - val_size - test_size
 
-    train_ds, val_ds, test_ds = random_split(covid_ds, [train_size, val_size, test_size], generator=torch.Generator().manual_seed(0))
+    train_ds, val_ds, test_ds, _ = random_split(covid_ds, [train_size, val_size, test_size, etc], generator=torch.Generator().manual_seed(0))
     print("Train dataset class :", label_statistics(train_ds))
     print("val dataset class :", label_statistics(val_ds))
     print("test dataset class :", label_statistics(test_ds))

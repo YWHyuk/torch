@@ -4,6 +4,8 @@ from torch import nn, optim
 from torch.optim.lr_scheduler import StepLR, ExponentialLR
 from matplotlib import pyplot as plt
 import copy, os, argparse, pathlib
+import numpy as np
+import itertools
 
 from covid import get_data_loader
 
@@ -106,7 +108,7 @@ def train_val(model, params):
 def test(model, data_loader):
     metric = 0.0
     len_data = len(data_loader.dataset)
-    confusion_matrix = [[0, 0],[0, 0]]
+    confusion_matrix = torch.tensor([[0, 0],[0, 0]], dtype=torch.int64)
 
     for xb, yb in data_loader:
         xb = xb.to(device)
@@ -155,6 +157,31 @@ def draw_result(title, name, log ,num_epochs):
     plt.savefig(os.path.join(output_folder, name))
     plt.clf()
 
+def plot_confusion_matrix(cm, classes, output, normalize=False, title='Confusion matrix', cmap=plt.cm.Blues):
+    if normalize:
+        cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+        print("Normalized confusion matrix")
+    else:
+        print('Confusion matrix, without normalization')
+
+    print(cm)
+    plt.imshow(cm, interpolation='nearest', cmap=cmap)
+    plt.title(title)
+    plt.colorbar()
+    tick_marks = np.arange(len(classes))
+    plt.xticks(tick_marks, classes, rotation=45)
+    plt.yticks(tick_marks, classes)
+
+    fmt = '.2f' if normalize else 'd'
+    thresh = cm.max() / 2.
+    for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
+        plt.text(j, i, format(cm[i][j], fmt), horizontalalignment="center", color="white" if cm[i, j] > thresh else "black")
+
+    plt.tight_layout()
+    plt.ylabel('True label')
+    plt.xlabel('Predicted label')
+    plt.savefig(os.path.join(output, "confusion.png"),bbox_inches = "tight")
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Prameter for ML')
     parser.add_argument('-O', type=pathlib.Path, help='Output folder path', required=True)
@@ -163,6 +190,7 @@ if __name__ == "__main__":
     parser.add_argument('-P', choices=['T', 'F'], required=True)
     parser.add_argument('-E', type=int, required=True)
     parser.add_argument('-B', type=int, required=True)
+    parser.add_argument('-m', type=int, required=True)
     parsed = parser.parse_args()
 
     output_folder = str(parsed.O)
@@ -171,7 +199,8 @@ if __name__ == "__main__":
     pretrained = parsed.P == 'T'
     num_epochs = parsed.E
     batch_size = parsed.B
-
+    max_datat = parsed.m
+    
     try:
         os.makedirs(output_folder, exist_ok=False)
     except FileExistsError:
@@ -180,7 +209,7 @@ if __name__ == "__main__":
     device = torch.device("cuda:0")
     # Load model and data
     model = load_model(model_name, pretrained, device)
-    train_dl, val_dl, test_dl = get_data_loader(input_data, batch_size, output_folder)
+    train_dl, val_dl, test_dl = get_data_loader(input_data, batch_size, output_folder, max_data)
     
     # Set loss, optimizer, learning late scheduler
     loss_func = nn.CrossEntropyLoss(reduction="mean")
@@ -205,4 +234,5 @@ if __name__ == "__main__":
     draw_result("Accuracy", "Train-val-Accuracy.png", metric_hist, num_epochs)
 
     print("############### Test Phase ###############")
-    test(model, test_dl)
+    cf = test(model, test_dl)
+    plot_confusion_matrix(cf, ["non Covid19", "Covid19"], output_folder)
