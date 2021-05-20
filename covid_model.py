@@ -106,7 +106,7 @@ def train_val(model, params):
     model.load_state_dict(best_model_wts)
     return model, loss_history, metric_history
 
-def test(model, data_loader, output_folder):
+def test(model, data_loader, device, output_folder):
     metric = 0.0
     len_data = len(data_loader.dataset)
     confusion_matrix = torch.tensor([[0, 0],[0, 0]], dtype=torch.int64)
@@ -129,7 +129,7 @@ def test(model, data_loader, output_folder):
             confusion_matrix[actual][predicted] += 1
 
         for idx, prob in enumerate(output):
-            roc_score.append(prob[yb[idx]].cpu().detach().data)
+            roc_score.append(prob[1].cpu().detach().data)
 
     curve = metrics.roc_curve(roc_y, roc_score)
     roc_auc = metrics.auc(curve[0], curve[1])
@@ -281,7 +281,7 @@ if __name__ == "__main__":
     draw_result("Accuracy", "Train-val-Accuracy.png", metric_hist, num_epochs)
 
     print("############### Test Phase ###############")
-    cf = test(model, test_dl, output_folder)
+    cf = test(model, test_dl, device, output_folder)
     plot_confusion_matrix(cf, ["non Covid19", "Covid19"], output_folder)
 
     

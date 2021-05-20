@@ -6,41 +6,48 @@ import torchvision.transforms as transforms
 from torch.utils.data import Subset, DataLoader, Dataset
 from torchvision.datasets import ImageFolder
 
-def test(model, data_loader):
-    metric = 0.0
-    len_data = len(data_loader.dataset)
-    
-    for xb, yb in data_loader:
-        xb = xb.to(device)
-        yb = yb.to(device)
-        output = model(xb)
-        pred = output.argmax(dim=1, keepdim=True)
-        tmp = pred.eq(yb.view_as(pred)).sum().item()
-        metric += tmp
-        print("batch result: %d/%d %f" % (tmp, len(xb), tmp / len(xb) * 100)) 
-    return metric / len_data
+from covid_model import test, plot_confusion_matrix
+from covid import get_data_loader
+import os
+import pathlib, argparse
 
 if __name__ == "__main__":
-    path_to_weights = "./covid_models2/resnet18.pt"
+    parser = argparse.ArgumentParser(description='Prameter for ML')
+    parser.add_argument('-O', type=pathlib.Path, help='Output folder path', required=True)
+    parser.add_argument('-I', type=pathlib.Path, help='input image folder path', required=True)
+    parser.add_argument('-M', choices=['resnet', 'vgg'], required=True)
+    parser.add_argument('-P', choices=['T', 'F'], required=True)
+    parser.add_argument('-p', choices=['T', 'F'], required=True)
+    parser.add_argument('-E', type=int, required=True)
+    parser.add_argument('-B', type=int, required=True)
+    parser.add_argument('-m', type=int, required=True)
+    parser.add_argument('-g', type=int, required=True)
     
-    #norm = transforms.Normalize(mean(ds), std(ds))
-    val_transformer = transforms.Compose([
-        transforms.Resize([512,512]),
-        transforms.ToTensor(),
-#        norm
-    ])
-    ds = ImageFolder("./full_data", val_transformer)
-    print(label_statistics(ds))
-    ds.transform = val_transformer
+    parsed = parser.parse_args()
 
-    test_dl = DataLoader(ds, batch_size=64, shuffle=True)
+    output_folder = str(parsed.O)
+    input_data = str(parsed.I)
+    model_name = parsed.M
+    pretrained = parsed.P == 'T'
+    fc_only = parsed.p == 'T'
+    num_epochs = parsed.E
+    batch_size = parsed.B
+    max_data = parsed.m
+    gpu_id = parsed.g
     
-    device = torch.device("cuda:0")
-    model = load_model(False, device)
-    model.load_state_dict(torch.load(path_to_weights))
+    try:
+        os.makedirs(output_folder, exist_ok=False)
+    except FileExistsError:
+        print("Overwriting output folder!")
 
-    model.eval()
-    with torch.no_grad():
-        acc = test(model, test_dl)
-    print("test acc: %.2f" %(acc*100))
+    device = torch.device("cuda:%d" % gpu_id)
+    # Load model and data
+    model = load_model(model_name, pretrained, fc_only, device)
+    model.load_state_dict(torch.load(os.path.join(output_folder, "weight.pt")))
 
+    train_dl, val_dl, test_dl = get_data_loader(input_data, batch_size, output_folder, max_data)
+    
+
+    print("############### Test Phase ###############")
+    cf = test(model, test_dl, device, output_folder)
+    plot_confusion_matrix(cf, ["non Covid19", "Covid19"], output_folder)
